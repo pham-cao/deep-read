@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './ChatPage.css';
 
 const initialMessages = [
@@ -43,6 +44,7 @@ const initialMessages = [
 ];
 
 export default function ChatPage() {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState(initialMessages);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -52,6 +54,24 @@ export default function ChatPage() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Auth check on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/auth/me', {
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          navigate('/login');
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        navigate('/login');
+      }
+    };
+    checkAuth();
+  }, [navigate]);
 
   useEffect(() => {
     scrollToBottom();

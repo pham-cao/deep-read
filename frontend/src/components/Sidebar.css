@@ -163,3 +163,49 @@
   background: rgba(0, 96, 103, 0.08);
   color: var(--on-surface);
 }
+
+/* Profile Menu Wrapper */
+.sidebar-profile-menu-wrapper {
+  position: relative;
+}
+
+/* Profile Dropdown */
+.sidebar-profile-dropdown {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  background: var(--surface-container);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+  min-width: 150px;
+  z-index: 200;
+  border: 1px solid var(--outline-variant);
+}
+
+.sidebar-profile-logout {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  width: 100%;
+  padding: var(--spacing-3) var(--spacing-4);
+  border: none;
+  background: none;
+  border-radius: var(--radius-md);
+  color: var(--on-surface);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  text-align: left;
+}
+
+.sidebar-profile-logout:hover {
+  background: rgba(0, 96, 103, 0.08);
+  color: var(--error);
+}
+
+.sidebar-profile-logout .material-icons-outlined {
+  font-size: 18px;
+}

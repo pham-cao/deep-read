@@ -5,7 +5,8 @@ export default function LoginPage() {
   const navigate = useNavigate();
 
   const handleGoogleLogin = () => {
-    navigate('/chat');
+    // Redirect to backend Google OAuth login
+    window.location.href = 'http://localhost:8000/auth/google/login';
   };
 
   return (
