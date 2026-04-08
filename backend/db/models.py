@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text, Uuid
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -23,6 +23,7 @@ class User(Base):
     # Relationships
     google_accounts = relationship("GoogleAccount", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    collections = relationship("Collection", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email})>"
@@ -63,3 +64,22 @@ class UserSession(Base):
 
     def __repr__(self):
         return f"<UserSession(id={self.id}, user_id={self.user_id}, expires_at={self.expires_at})>"
+
+
+class Collection(Base):
+    """A user-owned collection (e.g. group of documents)."""
+    __tablename__ = "collections"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    icon_base64 = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="collections")
+
+    def __repr__(self):
+        return f"<Collection(id={self.id}, name={self.name}, user_id={self.user_id})>"

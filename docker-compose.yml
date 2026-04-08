@@ -8,6 +8,8 @@ services:
     container_name: deep-read-backend
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}

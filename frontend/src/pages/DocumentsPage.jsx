@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './DocumentsPage.css';
 
@@ -87,8 +87,9 @@ for (let i = 9; i <= 12; i++) {
   ];
 }
 
-const COLLECTIONS_PER_PAGE = 8;
+const COLLECTIONS_PER_PAGE = 12;
 const DOCS_PER_PAGE = 6;
+const COLLECTION_COLORS = ['#006067', '#834718', '#4c616c', '#2e7d32'];
 
 function Pagination({ currentPage, totalPages, onPageChange }) {
   if (totalPages <= 1) return null;
@@ -129,13 +130,58 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
   );
 }
 
+function mapApiCollection(data, index = 0) {
+  return {
+    id: data.id,
+    name: data.name_collections,
+    description: data.descriptions,
+    docs: 0,
+    updated: data.created_at ? new Date(data.created_at).toLocaleDateString() : '',
+    icon: data.base_64_icon || 'folder',
+    color: COLLECTION_COLORS[index % COLLECTION_COLORS.length],
+  };
+}
+
 export default function DocumentsPage() {
-  const [collections, setCollections] = useState(initialCollections);
+  const [collections, setCollections] = useState([]);
+  const [totalCollections, setTotalCollections] = useState(0);
+  const [totalColPages, setTotalColPages] = useState(0);
+  const [isLoadingCollections, setIsLoadingCollections] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [docsByCol, setDocsByCol] = useState(documentsByCollection);
   const [selectedCollection, setSelectedCollection] = useState(null);
   const [colPage, setColPage] = useState(1);
   const [docPage, setDocPage] = useState(1);
   const navigate = useNavigate();
+
+  const fetchCollections = useCallback(async (page) => {
+    setIsLoadingCollections(true);
+    setLoadError(null);
+    try {
+      const [listRes, countRes] = await Promise.all([
+        fetch(`http://localhost:8000/collections/?page=${page}`, { credentials: 'include' }),
+        fetch('http://localhost:8000/collections/count', { credentials: 'include' }),
+      ]);
+      if (!listRes.ok) throw new Error(`Failed to load collections (${listRes.status})`);
+      if (!countRes.ok) throw new Error(`Failed to load total (${countRes.status})`);
+      const list = await listRes.json();
+      const count = await countRes.json();
+      setCollections(list.items.map((item, idx) => mapApiCollection(item, idx)));
+      setTotalCollections(count.total);
+      setTotalColPages(count.total_pages);
+    } catch (err) {
+      setLoadError(err.message || 'Failed to load collections');
+      setCollections([]);
+      setTotalCollections(0);
+      setTotalColPages(0);
+    } finally {
+      setIsLoadingCollections(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCollections(colPage);
+  }, [colPage, fetchCollections]);
 
   // Create Collection Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -144,32 +190,52 @@ export default function DocumentsPage() {
   const [newCollectionIcon, setNewCollectionIcon] = useState('folder');
   const iconOptions = ['folder', 'home', 'business', 'chair', 'engineering', 'park', 'eco', 'museum', 'construction', 'settings', 'account_balance', 'architecture'];
 
-  const handleCreateCollection = (e) => {
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState(null);
+
+  const handleCreateCollection = async (e) => {
     e.preventDefault();
-    if (!newCollectionName.trim()) return;
-    
-    const newCol = {
-      id: collections.length + Math.floor(Math.random() * 1000) + 100, // random id
-      name: newCollectionName,
-      docs: 0,
-      updated: 'Just now',
-      icon: newCollectionIcon,
-      color: '#006067'
-    };
-    
-    setCollections([newCol, ...collections]);
-    setIsCreateModalOpen(false);
-    setNewCollectionName('');
-    setNewCollectionDesc('');
-    setNewCollectionIcon('folder');
+    if (!newCollectionName.trim() || isCreating) return;
+
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      const response = await fetch('http://localhost:8000/collections/', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name_collections: newCollectionName,
+          descriptions: newCollectionDesc || null,
+          base_64_icon: newCollectionIcon || null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create collection (${response.status})`);
+      }
+
+      await response.json();
+
+      setIsCreateModalOpen(false);
+      setNewCollectionName('');
+      setNewCollectionDesc('');
+      setNewCollectionIcon('folder');
+      // Jump back to first page to see the newly created collection (sorted by created_at desc)
+      if (colPage !== 1) {
+        setColPage(1);
+      } else {
+        await fetchCollections(1);
+      }
+    } catch (err) {
+      setCreateError(err.message || 'Failed to create collection');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  // Collections pagination
-  const totalColPages = Math.ceil(collections.length / COLLECTIONS_PER_PAGE);
-  const pagedCollections = collections.slice(
-    (colPage - 1) * COLLECTIONS_PER_PAGE,
-    colPage * COLLECTIONS_PER_PAGE
-  );
+  // Collections come pre-paginated from the server
+  const pagedCollections = collections;
 
   // Documents pagination
   const currentDocs = selectedCollection ? (docsByCol[selectedCollection.id] || []) : [];
@@ -305,12 +371,25 @@ export default function DocumentsPage() {
           <div className="docs-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h2 className="title-md">Project Collections</h2>
-              <span className="body-sm docs-section-count">{collections.length} collections</span>
+              <span className="body-sm docs-section-count">{totalCollections} collections</span>
             </div>
             <button className="primary-btn" onClick={() => setIsCreateModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)' }}>
               <span className="material-icons-outlined">add</span> Create Collection
             </button>
           </div>
+          {loadError && (
+            <div className="body-sm" style={{ color: '#b3261e', padding: 'var(--spacing-2) 0' }}>
+              {loadError}
+            </div>
+          )}
+          {isLoadingCollections && pagedCollections.length === 0 && (
+            <div className="body-sm" style={{ padding: 'var(--spacing-2) 0' }}>Loading collections...</div>
+          )}
+          {!isLoadingCollections && !loadError && pagedCollections.length === 0 && (
+            <div className="body-sm" style={{ padding: 'var(--spacing-2) 0', color: 'var(--on-surface-variant)' }}>
+              No collections yet. Click "Create Collection" to get started.
+            </div>
+          )}
           <div className="docs-collections-grid" id="collections-grid">
             {pagedCollections.map((col, index) => (
               <div
@@ -343,7 +422,7 @@ export default function DocumentsPage() {
           </div>
           <div className="paging-wrapper">
             <span className="body-sm paging-info">
-              Showing {(colPage - 1) * COLLECTIONS_PER_PAGE + 1}–{Math.min(colPage * COLLECTIONS_PER_PAGE, collections.length)} of {collections.length} collections
+              Showing {totalCollections === 0 ? 0 : (colPage - 1) * COLLECTIONS_PER_PAGE + 1}–{Math.min(colPage * COLLECTIONS_PER_PAGE, totalCollections)} of {totalCollections} collections
             </span>
             <Pagination currentPage={colPage} totalPages={totalColPages} onPageChange={setColPage} />
           </div>
@@ -456,9 +535,16 @@ export default function DocumentsPage() {
                   ))}
                 </div>
               </div>
+              {createError && (
+                <div className="form-error body-sm" style={{ color: '#b3261e', marginBottom: 'var(--spacing-2)' }}>
+                  {createError}
+                </div>
+              )}
               <div className="modal-footer">
-                <button type="button" className="secondary-btn" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
-                <button type="submit" className="primary-btn" disabled={!newCollectionName.trim()}>Create</button>
+                <button type="button" className="secondary-btn" onClick={() => setIsCreateModalOpen(false)} disabled={isCreating}>Cancel</button>
+                <button type="submit" className="primary-btn" disabled={!newCollectionName.trim() || isCreating}>
+                  {isCreating ? 'Creating...' : 'Create'}
+                </button>
               </div>
             </form>
           </div>

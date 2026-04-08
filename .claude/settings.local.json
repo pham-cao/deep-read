@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(npm run:*)",
+      "WebFetch(domain:docs.langchain.com)"
+    ]
+  }
+}

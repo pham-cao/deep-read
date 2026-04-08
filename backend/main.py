@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from routers import auth
+from routers import auth, collections, chat
 from db.engine import create_tables, engine
 
 # Load CORS configuration
@@ -52,6 +52,8 @@ app.add_middleware(
 
 # Include auth router
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(collections.router, prefix="/collections", tags=["collections"])
+app.include_router(chat.router, prefix="/chat", tags=["chat"])
 
 
 @app.get("/")

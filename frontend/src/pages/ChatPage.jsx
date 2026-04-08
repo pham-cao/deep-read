@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './ChatPage.css';
 
 const initialMessages = [
@@ -8,38 +10,8 @@ const initialMessages = [
     type: 'bot',
     sender: 'Architect AI',
     text: "Hello! I'm your AI architectural consultant. How can I help you design your next sustainable project today?",
-    time: '10:41 AM',
+    time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
     greeting: true,
-  },
-  {
-    id: 2,
-    type: 'user',
-    text: 'Can you explain the structural requirements for a cantilevered glass balcony in high-wind zones?',
-    time: '10:42 AM',
-  },
-  {
-    id: 3,
-    type: 'bot',
-    sender: 'Architect AI',
-    text: `For cantilevered glass balconies in high-wind environments, the primary concern is the dynamic pressure and resultant vibration. You must ensure:
-
-• The reinforced concrete slab has a minimum depth of 250mm at the root.
-• Laminated safety glass with a minimum thickness of 21.5mm (SentryGlas interlayer).
-• Stainless steel base channels must be recessed and mechanically fixed at 150mm intervals.`,
-    time: '10:43 AM',
-  },
-  {
-    id: 4,
-    type: 'user',
-    text: 'What about thermal bridging at the cantilever connection?',
-    time: '10:45 AM',
-  },
-  {
-    id: 5,
-    type: 'bot',
-    sender: 'Architect AI',
-    text: 'Thermal bridging is a critical risk factor. Using a thermal break element (like Schöck Isokorb) is mandatory to maintain the insulation envelope. This decouples the balcony slab from the internal floor slab while maintaining structural integrity.',
-    time: '10:45 AM',
   },
 ];
 
@@ -50,9 +22,14 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const isStreamingRef = useRef(false);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // During streaming use instant scroll so successive frames don't fight
+    // an in-progress smooth animation (which causes visible jank).
+    messagesEndRef.current?.scrollIntoView({
+      behavior: isStreamingRef.current ? 'auto' : 'smooth',
+    });
   };
 
   // Auth check on mount
@@ -74,12 +51,16 @@ export default function ChatPage() {
   }, [navigate]);
 
   useEffect(() => {
-    scrollToBottom();
+    // Schedule on next frame so multiple state updates in the same tick
+    // (typewriter slices) only cause one scroll instead of N.
+    const id = requestAnimationFrame(scrollToBottom);
+    return () => cancelAnimationFrame(id);
   }, [messages, isTyping]);
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
+    const trimmed = inputValue.trim();
+    if (!trimmed || isTyping) return;
 
     const now = new Date();
     const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
@@ -87,28 +68,163 @@ export default function ChatPage() {
     const userMsg = {
       id: Date.now(),
       type: 'user',
-      text: inputValue.trim(),
+      text: trimmed,
       time: timeStr,
     };
+
+    // Build chat history to send to backend (only user/bot turns, in order)
+    const history = messages
+      .filter((m) => !m.greeting)
+      .map((m) => ({
+        role: m.type === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      }));
 
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
     setIsTyping(true);
-
-    // Simulate bot response
-    setTimeout(() => {
-      setIsTyping(false);
-      const botMsg = {
-        id: Date.now() + 1,
-        type: 'bot',
-        sender: 'Architect AI',
-        text: 'Thank you for your question. Based on architectural best practices and current building codes, I would recommend conducting a thorough site analysis first. Let me provide you with detailed specifications and guidelines for your specific use case.',
-        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-      };
-      setMessages((prev) => [...prev, botMsg]);
-    }, 1800);
-
     inputRef.current?.focus();
+
+    const botId = Date.now() + 1;
+    isStreamingRef.current = true;
+
+    // Typewriter buffer: raw tokens are appended here and drained at a steady
+    // cadence by a requestAnimationFrame loop, smoothing out bursty chunks.
+    const buffer = { pending: '', streamDone: false };
+    let rafId = null;
+
+    const ensureBotMessage = (initialText) => {
+      setMessages((prev) => {
+        const existing = prev.find((m) => m.id === botId);
+        if (existing) return prev;
+        return [
+          ...prev,
+          {
+            id: botId,
+            type: 'bot',
+            sender: 'Architect AI',
+            text: initialText,
+            time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+            streaming: true,
+          },
+        ];
+      });
+    };
+
+    const drain = () => {
+      if (buffer.pending.length === 0) {
+        if (buffer.streamDone) {
+          rafId = null;
+          isStreamingRef.current = false;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === botId ? { ...m, streaming: false } : m))
+          );
+          return;
+        }
+        rafId = requestAnimationFrame(drain);
+        return;
+      }
+
+      // Adaptive cadence: drain faster when the buffer is large so we never
+      // fall too far behind, but stay slow enough to feel like typing.
+      const len = buffer.pending.length;
+      const take = Math.max(2, Math.min(len, Math.ceil(len / 8)));
+      const slice = buffer.pending.slice(0, take);
+      buffer.pending = buffer.pending.slice(take);
+
+      setMessages((prev) => {
+        const existing = prev.find((m) => m.id === botId);
+        if (!existing) {
+          return [
+            ...prev,
+            {
+              id: botId,
+              type: 'bot',
+              sender: 'Architect AI',
+              text: slice,
+              time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+              streaming: true,
+            },
+          ];
+        }
+        return prev.map((m) => (m.id === botId ? { ...m, text: m.text + slice } : m));
+      });
+
+      rafId = requestAnimationFrame(drain);
+    };
+
+    const appendToken = (token) => {
+      setIsTyping(false);
+      ensureBotMessage('');
+      buffer.pending += token;
+      if (rafId == null) {
+        rafId = requestAnimationFrame(drain);
+      }
+    };
+
+    const finishStreaming = () => {
+      buffer.streamDone = true;
+      // If nothing was ever buffered (e.g. error before first token), close out.
+      if (rafId == null) {
+        isStreamingRef.current = false;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === botId ? { ...m, streaming: false } : m))
+        );
+      }
+    };
+
+    try {
+      const response = await fetch('http://localhost:8000/chat/stream', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: trimmed, history }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Chat request failed (${response.status})`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      // Parse Server-Sent Events: events are separated by blank lines, each
+      // line starts with "data: " followed by JSON.
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let sepIndex;
+        while ((sepIndex = buffer.indexOf('\n\n')) !== -1) {
+          const rawEvent = buffer.slice(0, sepIndex);
+          buffer = buffer.slice(sepIndex + 2);
+
+          for (const line of rawEvent.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.token) {
+                appendToken(data.token);
+              } else if (data.error) {
+                appendToken(`\n[Error: ${data.error}]`);
+              }
+              // data.done → stream finished
+            } catch (err) {
+              console.error('Bad SSE chunk', dataStr, err);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      appendToken(`\n[Error: ${err.message}]`);
+    } finally {
+      setIsTyping(false);
+      finishStreaming();
+    }
   };
 
   return (
@@ -155,9 +271,18 @@ export default function ChatPage() {
             )}
             <div className="chat-msg-content">
               <div className={`chat-msg-bubble chat-msg-bubble-${msg.type}`}>
-                {msg.text.split('\n').map((line, i) => (
-                  <p key={i}>{line}</p>
-                ))}
+                {msg.type === 'bot' ? (
+                  <div className="chat-markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {msg.text}
+                    </ReactMarkdown>
+                    {msg.streaming && <span className="chat-cursor">▍</span>}
+                  </div>
+                ) : (
+                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {msg.text}
+                  </div>
+                )}
               </div>
               <span className="chat-msg-meta label-sm">
                 {msg.sender && <>{msg.sender} • </>}
