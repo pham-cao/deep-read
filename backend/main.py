@@ -1,3 +1,5 @@
+from db.engine import create_tables, engine
+from routers import auth, collections, chat
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,8 +9,6 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from routers import auth, collections, chat
-from db.engine import create_tables, engine
 
 # Load CORS configuration
 FRONTEND_URL = getenv("FRONTEND_URL", "http://localhost:5173")
@@ -18,7 +18,7 @@ def _pg_url_for_psycopg(url: str) -> str:
     """Convert SQLAlchemy asyncpg URL to plain psycopg3 URL."""
     return (
         url.replace("postgresql+asyncpg://", "postgresql://")
-           .replace("postgres+asyncpg://", "postgres://")
+        .replace("postgres+asyncpg://", "postgres://")
     )
 
 
@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
         api_key = getenv("GOOGLE_API_KEY") or getenv("GEMINI_API_KEY")
         if api_key:
             model = ChatGoogleGenerativeAI(
-                model=getenv("GEMINI_MODEL", "gemini-2.0-flash"),
+                model=getenv("GEMINI_MODEL", "gemini-2.5-flash"),
                 google_api_key=api_key,
                 temperature=0.7,
             )
@@ -115,7 +115,8 @@ app.add_middleware(
 
 # Include auth router
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(collections.router, prefix="/collections", tags=["collections"])
+app.include_router(collections.router,
+                   prefix="/collections", tags=["collections"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 
 
