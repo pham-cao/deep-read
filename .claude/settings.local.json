@@ -3,7 +3,9 @@
     "allow": [
       "Bash(xargs grep:*)",
       "Bash(npm run:*)",
-      "WebFetch(domain:docs.langchain.com)"
+      "WebFetch(domain:docs.langchain.com)",
+      "mcp__gem-document-server__search_tool",
+      "mcp__gem-document-server__get_section_tool"
     ]
   }
 }

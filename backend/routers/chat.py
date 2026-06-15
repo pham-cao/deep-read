@@ -7,16 +7,31 @@ from pydantic import BaseModel, Field
 from db.models import User
 from dependencies import get_current_user
 
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+
+client = MultiServerMCPClient(
+    {
+        "docs_knowledge": {
+            # Make sure you start your weather server on port 8000
+            "url": "http://host.docker.internal:8080/mcp",
+            "transport": "streamable_http",
+        }
+    }
+)
+
 router = APIRouter()
 
 # Lazy global agent — built on first request so missing API keys don't break import
 _agent = None
 
 
-def _get_agent():
+async def _get_agent():
     global _agent
     if _agent is not None:
         return _agent
+    
+    tools =   await client.get_tools()
 
     api_key = getenv("GOOGLE_API_KEY") or getenv("GEMINI_API_KEY")
     if not api_key:
@@ -35,13 +50,11 @@ def _get_agent():
         google_api_key=api_key,
         temperature=0.7,
     )
+    print("Initializing agent with tools:", tools)
     _agent = create_react_agent(
         model,
-        tools=[],
-        prompt=(
-            "You are Architect AI, a helpful assistant for architects and designers. "
-            "Provide clear, accurate, and practical answers about architecture, materials, "
-            "construction, and design."
+        tools=tools,
+        prompt=("bạn là một trợ lý ảo có tên là DeepRead, giúp người dùng trả lời các câu hỏi dựa trên kiến thức từ các tài liệu đã được cung cấp. "
         ),
     )
     return _agent
@@ -67,7 +80,7 @@ async def chat_stream(
     user: User = Depends(get_current_user),
 ):
     """Stream the agent's response token-by-token over Server-Sent Events."""
-    agent = _get_agent()
+    agent = await _get_agent()
 
     # Build the message list: previous history + new user message
     messages = [{"role": m.role, "content": m.content} for m in payload.history]
