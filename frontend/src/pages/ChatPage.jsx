@@ -20,6 +20,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState(initialMessages);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const isStreamingRef = useRef(false);
@@ -56,6 +57,13 @@ export default function ChatPage() {
     const id = requestAnimationFrame(scrollToBottom);
     return () => cancelAnimationFrame(id);
   }, [messages, isTyping]);
+
+  const handleNewChat = () => {
+    setMessages(initialMessages);
+    setSessionId(null);
+    setInputValue('');
+    setIsTyping(false);
+  };
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -178,7 +186,7 @@ export default function ChatPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, history }),
+        body: JSON.stringify({ message: trimmed, history, session_id: sessionId }),
       });
 
       if (!response.ok || !response.body) {
@@ -207,7 +215,9 @@ export default function ChatPage() {
             if (!dataStr) continue;
             try {
               const data = JSON.parse(dataStr);
-              if (data.token) {
+              if (data.session_id) {
+                setSessionId(data.session_id);
+              } else if (data.token) {
                 appendToken(data.token);
               } else if (data.error) {
                 appendToken(`\n[Error: ${data.error}]`);
@@ -242,6 +252,9 @@ export default function ChatPage() {
           </div>
         </div>
         <div className="chat-header-actions">
+          <button className="chat-header-btn" onClick={handleNewChat} aria-label="New chat">
+            <span className="material-icons-outlined">add_comment</span>
+          </button>
           <button className="chat-header-btn" id="chat-search-btn" aria-label="Search">
             <span className="material-icons-outlined">search</span>
           </button>
